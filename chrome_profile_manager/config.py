@@ -1,0 +1,162 @@
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+
+class ConfigError(Exception):
+    """Raised when config parsing or validation fails."""
+
+
+@dataclass(slots=True)
+class AppConfig:
+    chrome_path: Path
+    instances: int
+    profiles_root: Path
+    extension_folders: list[Path] = field(default_factory=list)
+    use_proxy: bool = False
+    proxy_server: str | None = None
+    window_width: int = 1280
+    window_height: int = 800
+    cleanup_cache_on_start: bool = False
+    relaunch_delay_seconds: float = 2.0
+    check_interval_seconds: float = 2.0
+    extra_chrome_flags: list[str] = field(default_factory=list)
+    log_file: Path = Path("chrome_profile_manager.log")
+
+
+def load_config(config_path: str | Path) -> AppConfig:
+    path = Path(config_path).expanduser()
+    if not path.is_file():
+        raise ConfigError(f"Config file not found: {path}")
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ConfigError(f"Invalid JSON in config: {exc}") from exc
+
+    return _validate(data, path.parent)
+
+
+def _validate(raw: dict[str, Any], base_dir: Path) -> AppConfig:
+    chrome_path = _resolve_file(raw.get("chrome_path"), "chrome_path", base_dir)
+    instances = _require_int(raw.get("instances"), "instances", min_value=1)
+    profiles_root = _resolve_dir_path(raw.get("profiles_root"), "profiles_root", base_dir)
+
+    extension_folders = _resolve_extension_folders(raw.get("extension_folders"), base_dir)
+    use_proxy = bool(raw.get("use_proxy", False))
+    proxy_server = raw.get("proxy_server")
+    if use_proxy and not proxy_server:
+        raise ConfigError("proxy_server is required when use_proxy is true.")
+
+    window_width = _require_int(raw.get("window_width", 1280), "window_width", min_value=320)
+    window_height = _require_int(raw.get("window_height", 800), "window_height", min_value=240)
+    cleanup_cache_on_start = bool(raw.get("cleanup_cache_on_start", False))
+    relaunch_delay_seconds = _require_float(
+        raw.get("relaunch_delay_seconds", 2.0),
+        "relaunch_delay_seconds",
+        min_value=0.0,
+    )
+    check_interval_seconds = _require_float(
+        raw.get("check_interval_seconds", 2.0),
+        "check_interval_seconds",
+        min_value=0.2,
+    )
+
+    extra_chrome_flags_raw = raw.get("extra_chrome_flags", [])
+    if not isinstance(extra_chrome_flags_raw, list) or not all(
+        isinstance(item, str) for item in extra_chrome_flags_raw
+    ):
+        raise ConfigError("extra_chrome_flags must be a list of strings.")
+    extra_chrome_flags = [item.strip() for item in extra_chrome_flags_raw if item.strip()]
+
+    log_file = _resolve_output_path(raw.get("log_file", "chrome_profile_manager.log"), base_dir)
+
+    return AppConfig(
+        chrome_path=chrome_path,
+        instances=instances,
+        profiles_root=profiles_root,
+        extension_folders=extension_folders,
+        use_proxy=use_proxy,
+        proxy_server=proxy_server,
+        window_width=window_width,
+        window_height=window_height,
+        cleanup_cache_on_start=cleanup_cache_on_start,
+        relaunch_delay_seconds=relaunch_delay_seconds,
+        check_interval_seconds=check_interval_seconds,
+        extra_chrome_flags=extra_chrome_flags,
+        log_file=log_file,
+    )
+
+
+def _resolve_file(value: Any, key: str, base_dir: Path) -> Path:
+    if not value or not isinstance(value, str):
+        raise ConfigError(f"{key} is required and must be a string path.")
+
+    path = _resolve_path(value, base_dir)
+    if not path.is_file():
+        raise ConfigError(f"{key} does not exist or is not a file: {path}")
+    return path
+
+
+def _resolve_dir_path(value: Any, key: str, base_dir: Path) -> Path:
+    if not value or not isinstance(value, str):
+        raise ConfigError(f"{key} is required and must be a string path.")
+
+    path = _resolve_path(value, base_dir)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _resolve_output_path(value: Any, base_dir: Path) -> Path:
+    if not value or not isinstance(value, str):
+        raise ConfigError("log_file must be a string path.")
+    path = _resolve_path(value, base_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _resolve_extension_folders(value: Any, base_dir: Path) -> list[Path]:
+    if value in (None, "", []):
+        return []
+
+    if isinstance(value, str):
+        candidates = [value]
+    elif isinstance(value, list) and all(isinstance(item, str) for item in value):
+        candidates = value
+    else:
+        raise ConfigError("extension_folders must be a string or list of strings.")
+
+    resolved: list[Path] = []
+    for folder in candidates:
+        path = _resolve_path(folder, base_dir)
+        if not path.is_dir():
+            raise ConfigError(f"Extension folder not found: {path}")
+        resolved.append(path)
+    return resolved
+
+
+def _require_int(value: Any, key: str, min_value: int | None = None) -> int:
+    if type(value) is not int:
+        raise ConfigError(f"{key} must be an integer.")
+    if min_value is not None and value < min_value:
+        raise ConfigError(f"{key} must be >= {min_value}.")
+    return value
+
+
+def _require_float(value: Any, key: str, min_value: float | None = None) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ConfigError(f"{key} must be a number.")
+    result = float(value)
+    if min_value is not None and result < min_value:
+        raise ConfigError(f"{key} must be >= {min_value}.")
+    return result
+
+
+def _resolve_path(value: str, base_dir: Path) -> Path:
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = (base_dir / path).resolve()
+    return path
