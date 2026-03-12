@@ -20,6 +20,7 @@ _CACHE_RELATIVE_PATHS = [
 
 
 def clean_profile_cache(profile_dir: Path, logger: logging.Logger) -> None:
+    logger.info("Starting cache cleanup for profile: %s", profile_dir)
     removed_count = 0
     for rel in _CACHE_RELATIVE_PATHS:
         target = profile_dir / rel
@@ -38,4 +39,5 @@ def clean_profile_cache(profile_dir: Path, logger: logging.Logger) -> None:
 
     if removed_count == 0:
         logger.info("No cache folders found for profile: %s", profile_dir)
-
+    else:
+        logger.info("Cache cleanup completed for %s (removed paths=%s).", profile_dir, removed_count)

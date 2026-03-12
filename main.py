@@ -43,11 +43,16 @@ def main() -> int:
     logger.info("Instances target: %s", config.instances)
 
     launcher = ChromeLauncher(config, logger)
+    profile_assignments = launcher.prepare_profile_assignments()
+    if not profile_assignments:
+        logger.error("No profiles are available to launch. Exiting.")
+        return 3
+
+    logger.info("Managed profile count: %s", len(profile_assignments))
     if config.cleanup_cache_on_start:
         logger.info("Cache cleanup on start is enabled.")
-        for instance_id in range(1, config.instances + 1):
-            profile_dir = launcher.get_profile_dir(instance_id)
-            clean_profile_cache(profile_dir, logger)
+        for assignment in profile_assignments:
+            clean_profile_cache(assignment.profile_dir, logger)
 
     monitor = ProcessMonitor(
         launcher=launcher,
@@ -55,11 +60,10 @@ def main() -> int:
         relaunch_delay_seconds=config.relaunch_delay_seconds,
         check_interval_seconds=config.check_interval_seconds,
     )
-    monitor.start(range(1, config.instances + 1))
+    monitor.start(profile_assignments)
     monitor.run_forever()
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

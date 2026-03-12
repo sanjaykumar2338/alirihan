@@ -10,7 +10,9 @@ def setup_logger(log_file: Path) -> logging.Logger:
     logger.propagate = False
 
     if logger.handlers:
-        return logger
+        for handler in list(logger.handlers):
+            logger.removeHandler(handler)
+            handler.close()
 
     formatter = logging.Formatter(
         fmt="%(asctime)s | %(levelname)s | %(message)s",
@@ -26,4 +28,3 @@ def setup_logger(log_file: Path) -> logging.Logger:
     logger.addHandler(stream_handler)
     logger.addHandler(file_handler)
     return logger
-

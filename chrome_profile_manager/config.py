@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 
 class ConfigError(Exception):
@@ -15,6 +16,8 @@ class AppConfig:
     chrome_path: Path
     instances: int
     profiles_root: Path
+    profile_mode: str = "auto_detect"
+    cycle_existing_profiles: bool = True
     extension_folders: list[Path] = field(default_factory=list)
     use_proxy: bool = False
     proxy_server: str | None = None
@@ -44,12 +47,12 @@ def _validate(raw: dict[str, Any], base_dir: Path) -> AppConfig:
     chrome_path = _resolve_file(raw.get("chrome_path"), "chrome_path", base_dir)
     instances = _require_int(raw.get("instances"), "instances", min_value=1)
     profiles_root = _resolve_dir_path(raw.get("profiles_root"), "profiles_root", base_dir)
+    profile_mode = _validate_profile_mode(raw.get("profile_mode", "auto_detect"))
+    cycle_existing_profiles = bool(raw.get("cycle_existing_profiles", True))
 
     extension_folders = _resolve_extension_folders(raw.get("extension_folders"), base_dir)
     use_proxy = bool(raw.get("use_proxy", False))
-    proxy_server = raw.get("proxy_server")
-    if use_proxy and not proxy_server:
-        raise ConfigError("proxy_server is required when use_proxy is true.")
+    proxy_server = _validate_proxy_server(use_proxy, raw.get("proxy_server"))
 
     window_width = _require_int(raw.get("window_width", 1280), "window_width", min_value=320)
     window_height = _require_int(raw.get("window_height", 800), "window_height", min_value=240)
@@ -78,6 +81,8 @@ def _validate(raw: dict[str, Any], base_dir: Path) -> AppConfig:
         chrome_path=chrome_path,
         instances=instances,
         profiles_root=profiles_root,
+        profile_mode=profile_mode,
+        cycle_existing_profiles=cycle_existing_profiles,
         extension_folders=extension_folders,
         use_proxy=use_proxy,
         proxy_server=proxy_server,
@@ -131,11 +136,67 @@ def _resolve_extension_folders(value: Any, base_dir: Path) -> list[Path]:
 
     resolved: list[Path] = []
     for folder in candidates:
-        path = _resolve_path(folder, base_dir)
-        if not path.is_dir():
-            raise ConfigError(f"Extension folder not found: {path}")
+        if not folder.strip():
+            continue
+        path = _resolve_path(folder.strip(), base_dir)
         resolved.append(path)
     return resolved
+
+
+def _validate_profile_mode(value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigError("profile_mode must be a non-empty string.")
+
+    mode = value.strip().lower()
+    if mode != "auto_detect":
+        raise ConfigError("profile_mode currently supports only 'auto_detect'.")
+    return mode
+
+
+def _validate_proxy_server(use_proxy: bool, value: Any) -> str | None:
+    if not use_proxy:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value.strip() or None
+        raise ConfigError("proxy_server must be a string when provided.")
+
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigError("proxy_server is required when use_proxy is true.")
+
+    return _normalize_proxy_server(value.strip())
+
+
+def _normalize_proxy_server(proxy_value: str) -> str:
+    if "://" in proxy_value:
+        parsed = urlparse(proxy_value)
+        scheme = parsed.scheme.lower()
+        if scheme not in {"http", "https", "socks4", "socks5"}:
+            raise ConfigError(
+                "proxy_server scheme must be one of: http, https, socks4, socks5."
+            )
+        if parsed.hostname is None or parsed.port is None:
+            raise ConfigError("proxy_server must include host and port.")
+        if parsed.path not in ("", "/") or parsed.query or parsed.fragment:
+            raise ConfigError("proxy_server must not include path, query, or fragment.")
+
+        host = parsed.hostname
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        return f"{scheme}://{host}:{parsed.port}"
+
+    host, sep, port = proxy_value.rpartition(":")
+    if not sep or not host or not port:
+        raise ConfigError("proxy_server must be in 'host:port' or 'scheme://host:port' format.")
+    if any(char.isspace() for char in host) or "/" in host or "\\" in host:
+        raise ConfigError("proxy_server host contains invalid characters.")
+    if not port.isdigit():
+        raise ConfigError("proxy_server port must be numeric.")
+
+    port_num = int(port)
+    if not (1 <= port_num <= 65535):
+        raise ConfigError("proxy_server port must be between 1 and 65535.")
+    return f"{host}:{port_num}"
 
 
 def _require_int(value: Any, key: str, min_value: int | None = None) -> int:
@@ -158,5 +219,5 @@ def _require_float(value: Any, key: str, min_value: float | None = None) -> floa
 def _resolve_path(value: str, base_dir: Path) -> Path:
     path = Path(value).expanduser()
     if not path.is_absolute():
-        path = (base_dir / path).resolve()
-    return path
+        path = base_dir / path
+    return path.resolve()

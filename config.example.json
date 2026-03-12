@@ -1,12 +1,14 @@
 {
-  "chrome_path": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  "chrome_path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "instances": 3,
   "profiles_root": "./profiles",
+  "profile_mode": "auto_detect",
+  "cycle_existing_profiles": true,
   "extension_folders": [
-    "C:/path/to/extension_folder"
+    "/Applications/XAMPP/xamppfiles/htdocs/myworkplace/fiverr/test_extension"
   ],
   "use_proxy": false,
-  "proxy_server": "http://127.0.0.1:8080",
+  "proxy_server": "",
   "window_width": 1280,
   "window_height": 800,
   "cleanup_cache_on_start": true,
@@ -18,4 +20,3 @@
   ],
   "log_file": "./logs/chrome_profile_manager.log"
 }
-
