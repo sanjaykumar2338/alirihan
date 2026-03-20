@@ -40,6 +40,7 @@ class ChromeLauncher:
     def __init__(self, config: AppConfig, logger: logging.Logger) -> None:
         self.config = config
         self.logger = logger
+        self.managed_profiles: list[Path] = []
         self._validated_extension_folders = self._validate_extension_folders(
             self.config.extension_folders
         )
@@ -64,19 +65,21 @@ class ChromeLauncher:
         )
 
         if self.config.cycle_existing_profiles:
-            selected_profiles = all_profiles
+            self.managed_profiles = all_profiles
             self.logger.info(
-                "Profile selection mode: cycle existing profiles (managing %s profiles).",
-                len(selected_profiles),
+                "Profile selection mode: cycle existing profiles (rotation pool=%s, startup instances=%s).",
+                len(self.managed_profiles),
+                min(self.config.instances, len(self.managed_profiles)),
             )
         else:
-            selected_profiles = all_profiles[: self.config.instances]
+            self.managed_profiles = all_profiles[: self.config.instances]
             self.logger.info(
-                "Profile selection mode: first N profiles (N=%s, managing %s profiles).",
+                "Profile selection mode: first N profiles (N=%s, rotation pool=%s).",
                 self.config.instances,
-                len(selected_profiles),
+                len(self.managed_profiles),
             )
 
+        selected_profiles = self.managed_profiles[: self.config.instances]
         assignments = [
             ProfileAssignment(instance_id=index + 1, profile_dir=profile_dir)
             for index, profile_dir in enumerate(selected_profiles)
@@ -88,6 +91,9 @@ class ChromeLauncher:
                 assignment.profile_dir,
             )
         return assignments
+
+    def get_managed_profiles(self) -> list[Path]:
+        return list(self.managed_profiles)
 
     def launch(self, instance_id: int, profile_dir: Path, relaunch: bool = False) -> ManagedInstance:
         command = self._build_command(profile_dir)
@@ -122,6 +128,7 @@ class ChromeLauncher:
                 self._normalize_windows_path(path) for path in self._validated_extension_folders
             )
             args.append(f"--load-extension={extension_arg}")
+            args.append(f"--disable-extensions-except={extension_arg}")
 
         if self.config.use_proxy and self.config.proxy_server:
             args.append(f"--proxy-server={self.config.proxy_server}")

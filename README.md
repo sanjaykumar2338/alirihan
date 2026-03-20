@@ -7,12 +7,13 @@ Config-driven Python tool to launch and monitor multiple Chrome windows with ded
 - Detects existing profile folders in `profiles_root`
 - Creates missing profile folders when less than `instances`
 - Supports two profile strategies:
-  - `cycle_existing_profiles=true`: manage all detected profiles
-  - `cycle_existing_profiles=false`: manage first `instances` profiles
+  - `cycle_existing_profiles=true`: use all detected profiles as the relaunch rotation pool
+  - `cycle_existing_profiles=false`: use only the first `instances` profiles as the relaunch rotation pool
+- Always launches and maintains exactly `instances` Chrome processes
 - Loads one or more unpacked Chrome extensions from folder paths
 - Validates extension folders (`manifest.json` must exist)
 - Optional proxy support with normalized `--proxy-server`
-- Watchdog relaunches closed browsers using the same profile mapping
+- Watchdog relaunches closed browsers with the next profile in the rotation pool
 - Optional cache cleanup at startup
 - File + console logging
 
@@ -71,9 +72,10 @@ Config-driven Python tool to launch and monitor multiple Chrome windows with ded
 - On startup, the tool scans subfolders inside `profiles_root`.
 - If existing profiles are fewer than `instances`, it creates additional folders like `profile_01`, `profile_02`, etc.
 - If more profiles exist than `instances`:
-  - `cycle_existing_profiles=true`: all existing profiles are managed
-  - `cycle_existing_profiles=false`: only the first `instances` profiles are managed
-- If a managed browser closes, watchdog relaunches the same profile folder.
+  - `cycle_existing_profiles=true`: all existing profiles stay in the relaunch rotation pool
+  - `cycle_existing_profiles=false`: only the first `instances` profiles stay in the relaunch rotation pool
+- Startup launches only the configured `instances` count.
+- If a managed browser closes, watchdog relaunches it with the next available profile in round-robin order.
 
 ## Extension Folders
 
@@ -82,6 +84,7 @@ Config-driven Python tool to launch and monitor multiple Chrome windows with ded
 - Invalid extension folders are logged and skipped.
 - Chrome is launched with:
   - `--load-extension=path1,path2,path3`
+  - `--disable-extensions-except=path1,path2,path3`
 - Only unpacked extension folders are supported.
 - `.crx` files are not supported by this tool.
 
